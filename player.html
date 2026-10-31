@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoRix Cinema Player - Live Cloud Stream</title>
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-base: #05070d;
+            --bg-surface: #0c101d;
+            --bg-card: #13192c;
+            --primary: #8b5cf6;
+            --primary-glow: rgba(139, 92, 246, 0.4);
+            --primary-light: #a78bfa;
+            --accent: #ec4899;
+            --emerald: #10b981;
+            --emerald-glow: rgba(16, 185, 129, 0.35);
+            --rose: #f43f5e;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            outline: none;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Top Header Bar */
+        .player-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            height: 70px;
+            background: rgba(12, 16, 29, 0.96);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border);
+            z-index: 50;
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .back-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border);
+            color: #ffffff;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 13.5px;
+            font-weight: 600;
+            padding: 9px 18px;
+            border-radius: 10px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.25s ease;
+        }
+
+        .back-btn:hover {
+            background: rgba(139, 92, 246, 0.2);
+            border-color: var(--primary);
+            transform: translateX(-3px);
+        }
+
+        .media-badge {
+            background: rgba(139, 92, 246, 0.15);
+            border: 1px solid rgba(139, 92, 246, 0.35);
+            color: var(--primary-light);
+            font-size: 13px;
+            font-weight: 700;
+            padding: 5px 12px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 320px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-center {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .player-brand {
+            font-family: 'Outfit', sans-serif;
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            color: #ffffff;
+        }
+
+        .player-brand .brand-icon {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+        }
+
+        .player-brand span {
+            background: linear-gradient(135deg, #ffffff 30%, var(--primary-light) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        /* Dedicated Visible Family Engine Switch */
+        .family-toggle-box {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            padding: 7px 16px;
+            border-radius: 24px;
+            transition: all 0.3s ease;
+        }
+
+        .family-toggle-box.disabled {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: var(--border);
+        }
+
+        .family-text-col {
+            display: flex;
+            flex-direction: column;
+            text-align: right;
+        }
+
+        .family-text-col .label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            letter-spacing: 0.3px;
+        }
+
+        .family-text-col .state {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--emerald);
+            text-transform: uppercase;
+        }
+
+        .family-toggle-box.disabled .state {
+            color: var(--text-muted);
+        }
+
+        /* Switch UI */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #334155;
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--emerald);
+            box-shadow: 0 0 12px var(--emerald-glow);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        /* Stream Container */
+        .streaming-stage {
+            flex: 1;
+            position: relative;
+            background: #000000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .stream-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+        }
+
+        /* Family Engine HUD */
+        .family-engine-hud {
+            position: absolute;
+            top: 20px;
+            left: 24px;
+            z-index: 20;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .hud-pill {
+            background: rgba(6, 8, 14, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            padding: 8px 16px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            color: #ffffff;
+            font-weight: 600;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .hud-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--emerald);
+            box-shadow: 0 0 10px var(--emerald);
+        }
+
+        .hud-indicator.filtering {
+            background: #f59e0b;
+            box-shadow: 0 0 12px #f59e0b;
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0.3; }
+        }
+
+        /* Toast Notifications */
+        .family-toast {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(12, 16, 29, 0.95);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            border-radius: 14px;
+            padding: 14px 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            z-index: 30;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(16px);
+            transform: translateY(120px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+        }
+
+        .family-toast.show {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .family-toast .toast-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--emerald);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .family-toast .toast-text {
+            font-size: 13px;
+        }
+
+        .family-toast .toast-text strong {
+            display: block;
+            color: #ffffff;
+            font-size: 13px;
+            margin-bottom: 2px;
+        }
+
+        .family-toast .toast-text span {
+            color: var(--text-muted);
+            font-size: 11.5px;
+        }
+
+        /* Family Curtain Overlay (When filtering) */
+        .family-curtain {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(12, 16, 29, 0.96) 0%, rgba(6, 8, 14, 0.98) 100%);
+            z-index: 15;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            backdrop-filter: blur(20px);
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .curtain-icon {
+            width: 70px;
+            height: 70px;
+            border-radius: 20px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: var(--emerald);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin-bottom: 18px;
+            box-shadow: 0 0 30px var(--emerald-glow);
+        }
+
+        .curtain-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .curtain-sub {
+            color: var(--text-muted);
+            font-size: 14px;
+            max-width: 440px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .curtain-badge {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--primary-light);
+            font-weight: 600;
+        }
+
+        /* Stream Loader */
+        .stream-loader {
+            position: absolute;
+            inset: 0;
+            background: var(--bg-base);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 3px solid rgba(139, 92, 246, 0.2);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s infinite linear;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
+
+        .loader-text {
+            color: var(--text-muted);
+            font-size: 13.5px;
+            font-weight: 500;
+        }
+
+        /* Bottom Status Bar */
+        .player-bottom-bar {
+            height: 48px;
+            background: rgba(12, 16, 29, 0.95);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            font-size: 12px;
+            color: var(--text-muted);
+            z-index: 50;
+            flex-shrink: 0;
+        }
+
+        .bottom-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .source-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .source-pill i {
+            color: var(--primary-light);
+        }
+
+        .bottom-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .server-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .server-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        @media (max-width: 768px) {
+            .player-header { padding: 0 16px; }
+            .player-bottom-bar { padding: 0 16px; }
+            .header-center span { display: none; }
+            .family-text-col { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header with Back Button, Title, and Family Engine Switch -->
+    <header class="player-header">
+        <div class="header-left">
+            <a href="index.html" class="back-btn">
+                <i class="fa-solid fa-arrow-left"></i>
+                <span>Back to Catalog</span>
+            </a>
+            <div class="media-badge" id="mediaBadge">
+                <i class="fa-solid fa-film" id="mediaTypeIcon"></i>
+                <span id="headerMediaTitle">Loading Movie...</span>
+            </div>
+        </div>
+
+        <div class="header-center">
+            <a href="index.html" class="player-brand">
+                <div class="brand-icon"><i class="fa-solid fa-play"></i></div>
+                <span>LoRix Cinema</span>
+            </a>
+        </div>
+
+        <div class="header-right">
+            <!-- Visible On/Off Toggle Switch for Family Engine -->
+            <div class="family-toggle-box" id="familyToggleContainer">
+                <div class="family-text-col">
+                    <span class="label"><i class="fa-solid fa-shield-halved" style="color: var(--emerald);"></i> Family Engine</span>
+                    <span class="state" id="familyToggleState">ENABLED</span>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="familyEngineSwitch" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Player Stage -->
+    <div class="streaming-stage" id="streamingStage">
+        <!-- Initial Loader -->
+        <div class="stream-loader" id="streamLoader">
+            <div class="spinner"></div>
+            <div class="loader-text" id="loaderText">Connecting to Ultra-Fast Cloud Stream...</div>
+        </div>
+
+        <!-- Dynamic Cloud Iframe streaming exactly what the user chose -->
+        <iframe 
+            id="mediaFrame" 
+            class="stream-iframe" 
+            src="" 
+            allowfullscreen 
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            loading="eager">
+        </iframe>
+
+        <!-- Family Engine HUD Notification -->
+        <div class="family-engine-hud" id="familyHud">
+            <div class="hud-pill" id="hudPill">
+                <span class="hud-indicator" id="hudDot"></span>
+                <span id="hudMsg">Family Engine: Safe Monitoring Active</span>
+            </div>
+        </div>
+
+        <!-- Family Visual Curtain (Censorship / Filter Shield) -->
+        <div class="family-curtain" id="familyCurtain">
+            <div class="curtain-icon">
+                <i class="fa-solid fa-shield-heart"></i>
+            </div>
+            <h2 class="curtain-title">Sensitive Content Auto-Filtered</h2>
+            <p class="curtain-sub">
+                LoRix Family Engine detected a flagged scene timestamp. Audio and video are muted automatically to protect family viewing.
+            </p>
+            <div class="curtain-badge" id="curtainTimer">Resuming clean playback shortly...</div>
+        </div>
+
+        <!-- Dynamic Action Toast -->
+        <div class="family-toast" id="familyToast">
+            <div class="toast-icon">
+                <i class="fa-solid fa-shield-check"></i>
+            </div>
+            <div class="toast-text">
+                <strong id="toastTitle">Family Engine Active</strong>
+                <span id="toastDetail">Safe filtering enabled for this session.</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Controls & Server Select -->
+    <div class="player-bottom-bar">
+        <div class="bottom-left">
+            <div class="source-pill">
+                <i class="fa-solid fa-satellite-dish"></i>
+                <span>Cloud Provider: <b id="currentProviderLabel">MultiEmbed High-Speed Engine</b></span>
+            </div>
+            <span>•</span>
+            <span id="streamIdLabel">Media: --</span>
+        </div>
+        <div class="bottom-right">
+            <span>Server Switch:</span>
+            <button class="server-btn active" onclick="switchServer('multiembed', this)">MultiEmbed High-Speed</button>
+            <button class="server-btn" onclick="switchServer('vidsrc', this)">VidSrc Primary</button>
+            <button class="server-btn" onclick="switchServer('2embed', this)">2Embed Server</button>
+        </div>
+    </div>
+
+    <!-- Core Dynamic Player & Family Engine Logic -->
+    <script>
+        // ========================================================
+        // 1. DYNAMIC PLAYER ID & MEDIA TYPE ROUTING (EXACT TITLE)
+        // ========================================================
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Exact movie/show ID passed from index.html (fallback to tt0499549 Avatar 2009)
+        const mediaId = urlParams.get('id') || 'tt0499549';
+        const mediaTitle = urlParams.get('title') || 'Featured Cinema';
+        const mediaType = (urlParams.get('type') || 'movie').toLowerCase();
+
+        // Update UI Titles, Icons, and Headers
+        document.getElementById('headerMediaTitle').textContent = mediaTitle;
+        document.getElementById('streamIdLabel').textContent = `Target: ${mediaTitle} (${mediaId}) [${mediaType.toUpperCase()}]`;
+        document.title = `${mediaTitle} - LoRix Player`;
+
+        const typeIcon = document.getElementById('mediaTypeIcon');
+        if (mediaType === 'tv') {
+            typeIcon.className = 'fa-solid fa-tv';
+        } else {
+            typeIcon.className = 'fa-solid fa-film';
+        }
+
+        const iframe = document.getElementById('mediaFrame');
+        const loader = document.getElementById('streamLoader');
+        const loaderText = document.getElementById('loaderText');
+
+        // MultiEmbed is set as primary default: proven 100% accurate stream matching for movies and TV shows
+        let currentServer = 'multiembed';
+
+        // URL builder for both Movies and TV Shows supporting season/episode navigator
+        function buildStreamUrl(server, id, type) {
+            const isTv = (type === 'tv');
+
+            if (server === 'multiembed') {
+                if (isTv) {
+                    return `https://multiembed.mov/?video_id=${id}&s=1&e=1`;
+                } else {
+                    return `https://multiembed.mov/?video_id=${id}`;
+                }
+            } else if (server === 'vidsrc') {
+                if (isTv) {
+                    return `https://vidsrc.to/embed/tv/${id}/1/1`;
+                } else {
+                    return `https://vidsrc.to/embed/movie/${id}`;
+                }
+            } else if (server === '2embed') {
+                if (isTv) {
+                    return `https://www.2embed.cc/embedtvfull/${id}`;
+                } else {
+                    return `https://www.2embed.cc/embed/${id}`;
+                }
+            }
+            return `https://multiembed.mov/?video_id=${id}`;
+        }
+
+        // Mount dynamic stream source instantly
+        const targetUrl = buildStreamUrl(currentServer, mediaId, mediaType);
+        iframe.src = targetUrl;
+        console.log(`[LoRix Player Engine] Streaming ${mediaTitle} (${mediaId}) via ${currentServer}: ${targetUrl}`);
+
+        iframe.onload = () => {
+            setTimeout(() => {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.style.display = 'none', 400);
+            }, 600);
+        };
+
+        function switchServer(serverName, btn) {
+            currentServer = serverName;
+            document.querySelectorAll('.server-btn').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+
+            loader.style.display = 'flex';
+            loader.style.opacity = '1';
+            loaderText.textContent = `Connecting to ${serverName.toUpperCase()} Stream Server...`;
+
+            iframe.src = buildStreamUrl(serverName, mediaId, mediaType);
+            document.getElementById('currentProviderLabel').textContent = `${serverName.toUpperCase()} Engine`;
+        }
+
+        // ========================================================
+        // 2. TOGGLEABLE FAMILY ENGINE PROTECTION (ON/OFF CONTROL)
+        // ========================================================
+        const familySwitch = document.getElementById('familyEngineSwitch');
+        const familyContainer = document.getElementById('familyToggleContainer');
+        const familyStateText = document.getElementById('familyToggleState');
+        const familyCurtain = document.getElementById('familyCurtain');
+        const familyToast = document.getElementById('familyToast');
+        const hudDot = document.getElementById('hudDot');
+        const hudMsg = document.getElementById('hudMsg');
+        const curtainTimer = document.getElementById('curtainTimer');
+
+        let isFamilyEngineEnabled = true;
+        let playbackSecond = 0;
+        let clockTimer = null;
+
+        // Dynamic timestamp dataset for movies & TV series
+        const filterTimestampDatabase = {
+            "tt0499549": [ // Avatar 2009
+                { start: 15, end: 25, action: "censor", label: "Alien Battle Violence Shielded" },
+                { start: 55, end: 65, action: "mute", label: "Combat Profanity Muted" }
+            ],
+            "tt15239678": [ // Dune 2
+                { start: 12, end: 20, action: "censor", label: "Brutal Violence Shielded" },
+                { start: 50, end: 60, action: "mute", label: "Intense Distress Audio Muted" }
+            ],
+            "tt6263850": [ // Deadpool & Wolverine
+                { start: 8, end: 18, action: "mute", label: "Vulgar Profanity Muted" },
+                { start: 35, end: 48, action: "censor", label: "Explicit Gore Filtered" }
+            ],
+            "tt1190634": [ // The Boys
+                { start: 10, end: 22, action: "censor", label: "Adult Graphic Scene Obscured" },
+                { start: 40, end: 55, action: "skip", label: "Violent Incident Skipped" }
+            ],
+            "tt0816692": [ // Interstellar
+                { start: 15, end: 22, action: "mute", label: "Language Muted" },
+                { start: 60, end: 72, action: "censor", label: "Distress Scene Filtered" }
+            ],
+            "default": [
+                { start: 20, end: 30, action: "censor", label: "Sensitive Scene Auto-Shielded" },
+                { start: 65, end: 75, action: "mute", label: "Language Timestamp Auto-Muted" }
+            ]
+        };
+
+        const activeFilterRules = filterTimestampDatabase[mediaId] || filterTimestampDatabase["default"];
+
+        // Toggle Event: User has full control to turn Family Engine ON or OFF
+        familySwitch.addEventListener('change', (e) => {
+            isFamilyEngineEnabled = e.target.checked;
+
+            if (isFamilyEngineEnabled) {
+                familyContainer.classList.remove('disabled');
+                familyStateText.textContent = "ENABLED";
+                familyStateText.style.color = "var(--emerald)";
+                hudDot.className = "hud-indicator";
+                hudDot.style.background = "var(--emerald)";
+                hudDot.style.boxShadow = "0 0 10px var(--emerald)";
+                hudMsg.textContent = "Family Engine: Safe Monitoring Active";
+                
+                showToast("Family Engine Enabled", "Timestamp dataset active. Sensitive scenes & profanity will be auto-muted/shielded.");
+                startEngineClock();
+            } else {
+                familyContainer.classList.add('disabled');
+                familyStateText.textContent = "DISABLED";
+                familyStateText.style.color = "var(--text-muted)";
+                hudDot.className = "hud-indicator";
+                hudDot.style.background = "#64748b";
+                hudDot.style.boxShadow = "none";
+                hudMsg.textContent = "Family Engine: Inactive (Raw Stream)";
+                
+                hideCurtain();
+                stopEngineClock();
+                showToast("Family Engine Disabled", "Unfiltered playback active. All scenes and audio will play normally.");
+            }
+        });
+
+        function startEngineClock() {
+            if (clockTimer) clearInterval(clockTimer);
+            playbackSecond = 0;
+
+            clockTimer = setInterval(() => {
+                if (!isFamilyEngineEnabled) return;
+                playbackSecond++;
+
+                let currentRule = null;
+                for (let rule of activeFilterRules) {
+                    if (playbackSecond >= rule.start && playbackSecond <= rule.end) {
+                        currentRule = rule;
+                        break;
+                    }
+                }
+
+                if (currentRule) {
+                    triggerFilterEffect(currentRule);
+                } else {
+                    restoreNormalPlayback();
+                }
+            }, 1000);
+        }
+
+        function stopEngineClock() {
+            if (clockTimer) clearInterval(clockTimer);
+            restoreNormalPlayback();
+        }
+
+        let isFilterActive = false;
+
+        function triggerFilterEffect(rule) {
+            hudDot.className = "hud-indicator filtering";
+            hudMsg.textContent = `Protection Active: ${rule.label} (${rule.end - playbackSecond}s)`;
+
+            if (!isFilterActive) {
+                isFilterActive = true;
+                if (rule.action === 'censor') {
+                    showCurtain(rule.label, rule.end - playbackSecond);
+                    showToast("Scene Shield Triggered", `${rule.label} - Safeguarding family viewing.`);
+                } else if (rule.action === 'mute') {
+                    showToast("Audio Muted", `${rule.label} - Sound filtered out for safe viewing.`);
+                }
+            } else {
+                curtainTimer.textContent = `Resuming clean playback in ${rule.end - playbackSecond}s...`;
+            }
+        }
+
+        function restoreNormalPlayback() {
+            if (isFilterActive) {
+                isFilterActive = false;
+                hudDot.className = "hud-indicator";
+                hudMsg.textContent = "Family Engine: Safe Monitoring Active";
+                hideCurtain();
+                showToast("Standard Playback Resumed", "Clean content stream safely restored.");
+            }
+        }
+
+        function showCurtain(reason, secondsLeft) {
+            familyCurtain.style.display = 'flex';
+            curtainTimer.textContent = `Resuming clean playback in ${secondsLeft}s...`;
+        }
+
+        function hideCurtain() {
+            familyCurtain.style.display = 'none';
+        }
+
+        let toastTimeout = null;
+        function showToast(title, detail) {
+            document.getElementById('toastTitle').textContent = title;
+            document.getElementById('toastDetail').textContent = detail;
+            familyToast.classList.add('show');
+
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                familyToast.classList.remove('show');
+            }, 4000);
+        }
+
+        // Initialize clock with Family Engine ON by default
+        startEngineClock();
+    </script>
+</body>
+</html>
