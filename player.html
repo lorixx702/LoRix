@@ -521,6 +521,13 @@
 </head>
 <body>
 
+    <!-- ========================================================
+         LICENSE GATE: the player is locked until an active,
+         licensed user signs in.
+    ======================================================== -->
+    <script src="auth.js"></script>
+    <script>LoRixAuth.mountGate();</script>
+
     <!-- Header with Back Button, Title, and Family Engine Switch -->
     <header class="player-header">
         <div class="header-left">

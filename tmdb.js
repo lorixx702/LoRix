@@ -28,7 +28,7 @@
     'use strict';
 
     /* ======================= CONFIG SLOT ======================= */
-    var TMDB_API_KEY = ''; // <<< TMDB v3 API key (40 chars) goes here
+    var TMDB_API_KEY = '310fba77e5f2c280f32d821b8f8f08ec'; // <<< TMDB v3 API key
     /* ========================================================== */
 
     var BASE = 'https://api.themoviedb.org/3';

@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoRix Admin — License Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-base: #06080e;
+            --bg-surface: #0e1320;
+            --bg-card: #141b2e;
+            --bg-hover: #1b243d;
+            --primary: #8b5cf6;
+            --primary-deep: #6d28d9;
+            --emerald: #10b981;
+            --amber: #f59e0b;
+            --red: #ef4444;
+            --text: #e8ecf7;
+            --text-dim: #93a0bd;
+            --text-faint: #5b678a;
+            --line: #232d48;
+            --focus-ring: #c084fc;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        [hidden] { display: none !important; }   /* class display rules must not beat the hidden attribute */
+        html, body { height: 100%; }
+        body {
+            background:
+                radial-gradient(1100px 600px at 12% -10%, rgba(139, 92, 246, 0.14), transparent 58%),
+                radial-gradient(900px 550px at 105% 105%, rgba(16, 185, 129, 0.08), transparent 55%),
+                var(--bg-base);
+            color: var(--text);
+            font-family: 'Plus Jakarta Sans', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+            font-size: 15px;
+            min-height: 100%;
+        }
+
+        /* ---------------- header ---------------- */
+        .adm-header {
+            display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+            padding: 16px 26px;
+            background: rgba(14, 19, 32, 0.92);
+            border-bottom: 1px solid var(--line);
+            position: sticky; top: 0; z-index: 50;
+            backdrop-filter: blur(8px);
+        }
+        .adm-brand { display: flex; align-items: center; gap: 11px; font-size: 21px; font-weight: 800; letter-spacing: 0.4px; }
+        .adm-brand .brand-icon {
+            width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+            font-size: 14px; color: #fff;
+            background: linear-gradient(135deg, var(--primary), var(--primary-deep));
+            box-shadow: 0 7px 18px rgba(139, 92, 246, 0.45);
+        }
+        .adm-brand .adm-tag {
+            font-size: 10.5px; font-weight: 800; letter-spacing: 1.6px; color: var(--primary);
+            background: rgba(139, 92, 246, 0.14); border: 1px solid rgba(139, 92, 246, 0.45);
+            padding: 4px 10px; border-radius: 999px;
+        }
+        .adm-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-left: 6px; }
+        .stat-chip {
+            background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px;
+            padding: 7px 14px; display: flex; align-items: baseline; gap: 8px;
+        }
+        .stat-chip b { font-size: 19px; font-weight: 800; }
+        .stat-chip span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; color: var(--text-dim); }
+        .stat-chip.ok b { color: var(--emerald); }
+        .stat-chip.warn b { color: var(--amber); }
+        .stat-chip.dead b { color: var(--red); }
+        .adm-head-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+        /* ---------------- buttons ---------------- */
+        .adm-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            height: 44px; padding: 0 18px; border-radius: 11px; border: 1px solid transparent;
+            font-family: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer;
+            color: var(--text); background: var(--bg-hover); text-decoration: none;
+            transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+        }
+        .adm-btn.primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-deep));
+            box-shadow: 0 9px 22px rgba(139, 92, 246, 0.38);
+        }
+        .adm-btn.ghost { background: transparent; border-color: var(--line); }
+        .adm-btn.small { height: 34px; padding: 0 12px; font-size: 12.5px; border-radius: 9px; }
+        .adm-btn.mini { height: 30px; padding: 0 10px; font-size: 11.5px; border-radius: 8px; gap: 6px; }
+        .adm-btn.danger { background: rgba(239, 68, 68, 0.14); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
+        .adm-btn.warnbtn { background: rgba(245, 158, 11, 0.13); border-color: rgba(245, 158, 11, 0.4); color: #fcd34d; }
+        .adm-btn.okbtn { background: rgba(16, 185, 129, 0.13); border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7; }
+        .adm-btn:disabled { opacity: 0.55; cursor: default; }
+
+        /* ---------------- layout ---------------- */
+        .adm-main { padding: 22px 26px 46px; display: flex; flex-direction: column; gap: 20px; max-width: 1500px; margin: 0 auto; }
+        .adm-panel {
+            background: var(--bg-surface); border: 1px solid var(--line); border-radius: 16px;
+            padding: 20px 22px;
+        }
+        .adm-panel h2 {
+            font-size: 16.5px; font-weight: 800; display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+        }
+        .adm-panel h2 i { color: var(--primary); }
+        .adm-panel h2 .row-count { font-size: 12.5px; font-weight: 700; color: var(--text-faint); margin-left: auto; }
+        .adm-form-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+        .adm-field { display: flex; flex-direction: column; gap: 7px; min-width: 150px; }
+        .adm-field.grow { flex: 1; min-width: 220px; }
+        .adm-field label {
+            font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim);
+        }
+        .adm-field input, .adm-field select {
+            height: 46px; background: var(--bg-card); border: 1.5px solid var(--line); border-radius: 11px;
+            color: var(--text); font-family: inherit; font-size: 15.5px; padding: 0 14px; outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .adm-field input::placeholder { color: #55628a; }
+        .adm-field input:focus, .adm-field select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2); }
+        .adm-field select { cursor: pointer; }
+        .gen-result {
+            margin-top: 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+            background: rgba(16, 185, 129, 0.07); border: 1px dashed rgba(16, 185, 129, 0.45);
+            border-radius: 12px; padding: 13px 16px;
+        }
+        .gen-result code {
+            font-family: 'Courier New', monospace; font-size: 21px; font-weight: 700; letter-spacing: 1.5px; color: #6ee7b7;
+        }
+        .gen-result .gen-meta { font-size: 13px; color: var(--text-dim); }
+
+        /* ---------------- table ---------------- */
+        .adm-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; }
+        .adm-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+        .adm-table th {
+            text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.1px;
+            color: var(--text-dim); background: rgba(20, 27, 46, 0.9); padding: 12px 14px; white-space: nowrap;
+        }
+        .adm-table td { padding: 11px 14px; border-top: 1px solid var(--line); font-size: 13.5px; vertical-align: middle; }
+        .adm-table tbody tr:hover { background: rgba(27, 36, 61, 0.45); }
+        .user-cell { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+        .user-avatar {
+            width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+            font-size: 12px; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--primary), #4f46e5);
+        }
+        .user-cell .uname { font-weight: 700; }
+        .role-badge {
+            font-size: 9.5px; font-weight: 800; letter-spacing: 1px; padding: 2.5px 7px; border-radius: 999px;
+            background: rgba(139, 92, 246, 0.16); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.4);
+        }
+        .role-badge.user { background: rgba(148, 163, 184, 0.14); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.35); }
+        .key-cell { display: flex; align-items: center; gap: 8px; }
+        .key-cell code {
+            font-family: 'Courier New', monospace; font-size: 13.5px; font-weight: 700; letter-spacing: 0.8px; color: #a5f3fc;
+            white-space: nowrap;
+        }
+        .key-cell .unassigned { color: var(--text-faint); font-style: italic; font-family: inherit; font-size: 12.5px; }
+        .copy-key {
+            background: transparent; border: 1px solid var(--line); color: var(--text-dim);
+            width: 28px; height: 28px; border-radius: 7px; cursor: pointer; font-size: 11.5px;
+        }
+        .copy-key:hover { color: var(--text); border-color: var(--primary); }
+        .date-cell { white-space: nowrap; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+        .status-badge {
+            display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: 0.9px; text-transform: uppercase;
+            padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+        }
+        .status-active { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); }
+        .status-expired { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); }
+        .status-revoked { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
+        .status-nokey { background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.35); }
+        .days-cell { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; }
+        .days-cell.soon { color: var(--amber); }
+        .days-cell.dead { color: var(--red); font-weight: 600; }
+        .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+
+        /* ---------------- toast ---------------- */
+        .adm-toast {
+            position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(20px);
+            background: var(--bg-card); border: 1px solid var(--line); color: var(--text);
+            padding: 13px 22px; border-radius: 12px; font-size: 14.5px; font-weight: 700;
+            box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55); opacity: 0; pointer-events: none;
+            transition: opacity 0.22s, transform 0.22s; z-index: 999; max-width: 90vw; text-align: center;
+        }
+        .adm-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .adm-toast.ok { border-color: rgba(16, 185, 129, 0.5); }
+        .adm-toast.ok i { color: var(--emerald); }
+        .adm-toast.err { border-color: rgba(239, 68, 68, 0.5); }
+        .adm-toast.err i { color: var(--red); }
+
+        /* ---------------- D-Pad focus glow (TV remote) ---------------- */
+        .adm-btn:focus, .adm-btn.remote-focused,
+        .adm-field input:focus, .adm-field input.remote-focused,
+        .adm-field select:focus, .adm-field select.remote-focused,
+        .copy-key:focus, .copy-key.remote-focused {
+            outline: none; border-color: var(--focus-ring);
+            box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.35), 0 0 22px rgba(139, 92, 246, 0.4);
+        }
+        .adm-btn.remote-focused, .adm-btn:focus { transform: scale(1.04); }
+        .adm-btn.primary.remote-focused, .adm-btn.primary:focus {
+            box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.55), 0 0 30px rgba(139, 92, 246, 0.6);
+        }
+        .adm-btn:active { transform: scale(0.98); }
+
+        @media (max-width: 860px) {
+            .adm-header { padding: 13px 15px; }
+            .adm-stats { order: 3; width: 100%; }
+            .adm-main { padding: 16px 14px 40px; }
+            .adm-panel { padding: 16px 15px; }
+            .adm-head-actions { margin-left: auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Gate must be armed before any dashboard markup exists -->
+    <script src="auth.js"></script>
+    <script>LoRixAuth.mountGate({ requireAdmin: true });</script>
+
+    <div id="adminApp" hidden>
+        <header class="adm-header">
+            <div class="adm-brand">
+                <span class="brand-icon"><i class="fa-solid fa-play"></i></span>
+                LoRix <span class="adm-tag">ADMIN CONSOLE</span>
+            </div>
+            <div class="adm-stats" id="admStats"></div>
+            <div class="adm-head-actions">
+                <a class="adm-btn ghost" href="index.html"><i class="fa-solid fa-arrow-left"></i> Store</a>
+                <button class="adm-btn ghost" id="btnAdmLogout"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+            </div>
+        </header>
+
+        <main class="adm-main">
+
+            <!-- ============ Key Generator ============ -->
+            <section class="adm-panel" id="genPanel">
+                <h2><i class="fa-solid fa-key"></i> Key Generator</h2>
+                <div class="adm-form-row">
+                    <div class="adm-field">
+                        <label for="genDuration">Expiration</label>
+                        <select id="genDuration">
+                            <option value="30">30 days</option>
+                            <option value="90" selected>90 days</option>
+                            <option value="365">1 year (365 days)</option>
+                            <option value="custom">Custom…</option>
+                        </select>
+                    </div>
+                    <div class="adm-field" id="genCustomWrap" hidden>
+                        <label for="genCustomDays">Custom days</label>
+                        <input type="number" id="genCustomDays" min="1" max="3650" value="180" inputmode="numeric">
+                    </div>
+                    <div class="adm-field grow">
+                        <label for="genAssign">Assign to user (optional)</label>
+                        <select id="genAssign"><option value="">— unassigned —</option></select>
+                    </div>
+                    <button class="adm-btn primary" id="btnGenerate"><i class="fa-solid fa-wand-magic-sparkles"></i> Generate Key</button>
+                </div>
+                <div class="gen-result" id="genResult" hidden>
+                    <code id="genKeyText">LORIX-XXXX-XXXX</code>
+                    <span class="gen-meta" id="genMeta"></span>
+                    <button class="adm-btn small okbtn" id="btnCopyKey"><i class="fa-regular fa-copy"></i> Copy</button>
+                </div>
+            </section>
+
+            <!-- ============ Add New User ============ -->
+            <section class="adm-panel" id="userPanel">
+                <h2><i class="fa-solid fa-user-plus"></i> Add New User</h2>
+                <div class="adm-form-row">
+                    <div class="adm-field grow">
+                        <label for="newUser">Username</label>
+                        <input type="text" id="newUser" placeholder="e.g. ahmed" autocomplete="off" autocapitalize="off" spellcheck="false">
+                    </div>
+                    <div class="adm-field grow">
+                        <label for="newPass">Password</label>
+                        <input type="password" id="newPass" placeholder="min 6 characters" autocomplete="new-password">
+                    </div>
+                    <div class="adm-field">
+                        <label for="newDuration">License</label>
+                        <select id="newDuration">
+                            <option value="30">30 days</option>
+                            <option value="90" selected>90 days</option>
+                            <option value="365">1 year (365 days)</option>
+                        </select>
+                    </div>
+                    <button class="adm-btn primary" id="btnAddUser"><i class="fa-solid fa-user-check"></i> Create User</button>
+                </div>
+            </section>
+
+            <!-- ============ User & Key Manager ============ -->
+            <section class="adm-panel" id="tablePanel">
+                <h2><i class="fa-solid fa-users-gear"></i> Users &amp; License Keys
+                    <span class="row-count" id="tableCount"></span>
+                </h2>
+                <div class="adm-table-wrap">
+                    <table class="adm-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>License Key</th>
+                                <th>Created</th>
+                                <th>Expires</th>
+                                <th>Status</th>
+                                <th>Remaining</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="keyTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+        </main>
+
+        <div class="adm-toast" id="admToast" role="status"></div>
+    </div>
+
+    <script>
+        (function () {
+            // The gate owns the page unless an administrator session is live.
+            if (!LoRixAuth.isAdmin()) return;
+
+            var app = document.getElementById('adminApp');
+            app.hidden = false;
+
+            var toastEl = document.getElementById('admToast');
+            var toastTimer = null;
+
+            // Session can change in another tab (shared localStorage) — every
+            // mutating action re-verifies the admin session before running.
+            function guard() {
+                if (LoRixAuth.isAdmin()) return true;
+                location.reload(); // gate re-arms with the current session
+                return false;
+            }
+
+            function toast(msg, kind) {
+                toastEl.innerHTML = '<i class="fa-solid ' + (kind === 'err' ? 'fa-circle-xmark' : 'fa-circle-check') + '"></i> ' + msg;
+                toastEl.className = 'adm-toast show ' + (kind === 'err' ? 'err' : 'ok');
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(function () { toastEl.className = 'adm-toast'; }, 2800);
+            }
+
+            function copyText(text) {
+                function fallback() {
+                    try {
+                        var ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        toast('Copied ' + text);
+                    } catch (e) {
+                        toast('Copy unavailable — key is ' + text, 'err');
+                    }
+                }
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(function () { toast('Copied ' + text); }, fallback);
+                } else {
+                    fallback();
+                }
+            }
+
+            /* ---------------- stats ---------------- */
+            function renderStats() {
+                var s = LoRixAuth.stats();
+                document.getElementById('admStats').innerHTML =
+                    chip(s.users, 'Users', '') +
+                    chip(s.active, 'Active keys', 'ok') +
+                    chip(s.expiring, 'Expiring ≤7d', 'warn') +
+                    chip(s.dead, 'Expired · Revoked', 'dead');
+            }
+            function chip(n, label, cls) {
+                return '<div class="stat-chip ' + cls + '"><b>' + n + '</b><span>' + label + '</span></div>';
+            }
+
+            /* ---------------- assign dropdown ---------------- */
+            function renderAssign() {
+                var sel = document.getElementById('genAssign');
+                var prev = sel.value;
+                var opts = '<option value="">— unassigned —</option>';
+                LoRixAuth.listUsers().forEach(function (u) {
+                    opts += '<option value="' + u.u + '">' + u.u + (u.role === 'admin' ? ' (admin)' : '') + '</option>';
+                });
+                sel.innerHTML = opts;
+                sel.value = prev && sel.querySelector('option[value="' + prev + '"]') ? prev : '';
+            }
+
+            /* ---------------- table ---------------- */
+            function statusBadge(row) {
+                if (!row) return '<span class="status-badge status-nokey">No key</span>';
+                if (row.status === 'active') return '<span class="status-badge status-active">Active</span>';
+                if (row.status === 'expired') return '<span class="status-badge status-expired">Expired</span>';
+                return '<span class="status-badge status-revoked">Revoked</span>';
+            }
+            function daysCell(row) {
+                if (!row) return '<span class="days-cell">—</span>';
+                if (row.status === 'active') {
+                    var cls = row.remaining <= 7 ? 'days-cell soon' : 'days-cell';
+                    return '<span class="' + cls + '">' + row.remaining + ' day' + (row.remaining === 1 ? '' : 's') + '</span>';
+                }
+                if (row.status === 'expired') {
+                    return '<span class="days-cell dead">Expired ' + Math.abs(row.remaining) + 'd ago</span>';
+                }
+                return '<span class="days-cell dead">—</span>';
+            }
+            function actionsCell(row, username) {
+                if (!row) {
+                    return '<div class="row-actions">' +
+                        '<button class="adm-btn mini okbtn" data-act="issue" data-user="' + username + '"><i class="fa-solid fa-key"></i> Issue Key</button>' +
+                        '</div>';
+                }
+                return '<div class="row-actions">' +
+                    '<button class="adm-btn mini okbtn" data-act="renew" data-key="' + row.key + '"><i class="fa-solid fa-rotate"></i> Renew</button>' +
+                    '<button class="adm-btn mini warnbtn" data-act="extend" data-key="' + row.key + '"><i class="fa-solid fa-plus"></i> Extend</button>' +
+                    '<button class="adm-btn mini danger" data-act="revoke" data-key="' + row.key + '"><i class="fa-solid fa-ban"></i> Revoke</button>' +
+                    '<button class="adm-btn mini danger" data-act="delete" data-key="' + row.key + '"><i class="fa-solid fa-trash"></i> Delete</button>' +
+                    '</div>';
+            }
+
+            function renderTable() {
+                var keys = LoRixAuth.listKeys();
+                var users = LoRixAuth.listUsers();
+                var byUser = {};
+                keys.forEach(function (k) {
+                    if (k.user) (byUser[k.user] = byUser[k.user] || []).push(k);
+                });
+
+                var rows = [];
+                var seen = {};
+                users.forEach(function (u) {
+                    seen[u.u] = true;
+                    var mine = byUser[u.u];
+                    if (mine && mine.length) {
+                        mine.forEach(function (k) { rows.push({ user: u, key: k }); });
+                    } else {
+                        rows.push({ user: u, key: null }); // user exists but key was deleted
+                    }
+                });
+                keys.forEach(function (k) {           // generated, not yet assigned
+                    if (!k.user) rows.push({ user: null, key: k });
+                });
+
+                var html = '';
+                rows.forEach(function (r) {
+                    var u = r.user;
+                    var k = r.key;
+                    var userCell = u
+                        ? '<div class="user-cell"><span class="user-avatar">' + u.u.charAt(0).toUpperCase() + '</span>' +
+                          '<span class="uname">' + u.u + '</span>' +
+                          '<span class="role-badge ' + (u.role === 'admin' ? '' : 'user') + '">' + (u.role === 'admin' ? 'ADMIN' : 'USER') + '</span></div>'
+                        : '<div class="user-cell"><span class="user-avatar" style="background:linear-gradient(135deg,#475569,#334155)">?</span>' +
+                          '<span class="uname" style="color:#94a3b8">unassigned</span></div>';
+                    var keyCell = k
+                        ? '<div class="key-cell"><code>' + k.key + '</code>' +
+                          '<button class="copy-key" data-act="copy" data-key="' + k.key + '" title="Copy key"><i class="fa-regular fa-copy"></i></button></div>'
+                        : '<div class="key-cell"><span class="unassigned">— none —</span></div>';
+                    html += '<tr>' +
+                        '<td>' + userCell + '</td>' +
+                        '<td>' + keyCell + '</td>' +
+                        '<td class="date-cell">' + LoRixAuth.fmtDate(k ? k.created : (u ? u.created : null)) + '</td>' +
+                        '<td class="date-cell">' + (k ? LoRixAuth.fmtDate(k.expires) : '—') + '</td>' +
+                        '<td>' + statusBadge(k) + '</td>' +
+                        '<td>' + daysCell(k) + '</td>' +
+                        '<td>' + actionsCell(k, u ? u.u : '') + '</td>' +
+                        '</tr>';
+                });
+
+                var body = document.getElementById('keyTableBody');
+                body.innerHTML = html || '<tr><td colspan="7" style="color:#5b678a;text-align:center;padding:26px;">No users or keys yet.</td></tr>';
+                document.getElementById('tableCount').textContent = rows.length + ' row' + (rows.length === 1 ? '' : 's');
+            }
+
+            function renderAll() {
+                renderStats();
+                renderAssign();
+                renderTable();
+            }
+
+            /* ---------------- generator ---------------- */
+            document.getElementById('genDuration').addEventListener('change', function () {
+                document.getElementById('genCustomWrap').hidden = this.value !== 'custom';
+            });
+
+            document.getElementById('btnGenerate').addEventListener('click', function () {
+                if (!guard()) return;
+                var sel = document.getElementById('genDuration');
+                var days;
+                if (sel.value === 'custom') {
+                    days = parseInt(document.getElementById('genCustomDays').value, 10);
+                    if (!days || days < 1) return toast('Enter a custom day count (1–3650).', 'err');
+                    days = Math.min(3650, days);
+                } else {
+                    days = parseInt(sel.value, 10);
+                }
+                var assign = document.getElementById('genAssign').value || null;
+                var res = LoRixAuth.generateKey({ days: days, user: assign });
+                document.getElementById('genKeyText').textContent = res.key;
+                document.getElementById('genMeta').textContent =
+                    days + ' days · ' + (assign ? 'assigned to ' + assign : 'unassigned') +
+                    ' · expires ' + LoRixAuth.fmtDate(res.expires);
+                document.getElementById('genResult').hidden = false;
+                renderAll();
+                toast('Generated ' + res.key);
+            });
+
+            document.getElementById('btnCopyKey').addEventListener('click', function () {
+                copyText(document.getElementById('genKeyText').textContent);
+            });
+
+            /* ---------------- add user ---------------- */
+            document.getElementById('btnAddUser').addEventListener('click', function () {
+                if (!guard()) return;
+                var username = document.getElementById('newUser').value;
+                var password = document.getElementById('newPass').value;
+                var days = parseInt(document.getElementById('newDuration').value, 10);
+                var res = LoRixAuth.addUser({ username: username, password: password, days: days });
+                if (!res.ok) return toast(res.error, 'err');
+                document.getElementById('newUser').value = '';
+                document.getElementById('newPass').value = '';
+                renderAll();
+                toast('User ' + res.user + ' created · key ' + res.key);
+            });
+
+            // Enter jumps username -> password -> create (TV remote OK)
+            document.getElementById('newUser').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); document.getElementById('newPass').focus(); }
+            });
+            document.getElementById('newPass').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnAddUser').click(); }
+            });
+
+            /* ---------------- table quick actions ---------------- */
+            document.getElementById('keyTableBody').addEventListener('click', function (e) {
+                if (!guard()) return;
+                var btn = e.target.closest ? e.target.closest('button[data-act]') : null;
+                if (!btn) return;
+                var act = btn.getAttribute('data-act');
+                var key = btn.getAttribute('data-key');
+                var res;
+
+                if (act === 'copy') return copyText(key);
+
+                if (act === 'issue') {
+                    var days = parseInt(document.getElementById('genDuration').value, 10);
+                    if (days === 'custom') {
+                        days = parseInt(document.getElementById('genCustomDays').value, 10) || 90;
+                    }
+                    res = LoRixAuth.generateKey({ days: days, user: btn.getAttribute('data-user') });
+                    renderAll();
+                    return toast('Issued ' + res.key + ' to ' + btn.getAttribute('data-user'));
+                }
+
+                if (act === 'delete') {
+                    // Two-step confirm: no native dialogs on TV wrappers.
+                    if (btn.dataset.confirm !== '1') {
+                        btn.dataset.confirm = '1';
+                        btn.innerHTML = '<i class="fa-solid fa-question"></i> Sure?';
+                        setTimeout(function () {
+                            if (btn.dataset) {
+                                btn.dataset.confirm = '0';
+                                btn.innerHTML = '<i class="fa-solid fa-trash"></i> Delete';
+                            }
+                        }, 3000);
+                        return;
+                    }
+                    res = LoRixAuth.deleteKey(key);
+                    renderAll();
+                    return toast('Key ' + key + ' deleted');
+                }
+
+                if (act === 'renew') {
+                    res = LoRixAuth.renewKey(key);
+                    if (!res.ok) return toast(res.error, 'err');
+                    renderAll();
+                    return toast('Renewed ' + key + ' → ' + LoRixAuth.fmtDate(res.expires));
+                }
+                if (act === 'extend') {
+                    res = LoRixAuth.extendKey(key);
+                    if (!res.ok) return toast(res.error, 'err');
+                    renderAll();
+                    return toast('Extended ' + key + ' → ' + LoRixAuth.fmtDate(res.expires));
+                }
+                if (act === 'revoke') {
+                    res = LoRixAuth.revokeKey(key);
+                    if (!res.ok) return toast(res.error, 'err');
+                    renderAll();
+                    return toast('Revoked ' + key);
+                }
+            });
+
+            /* ---------------- header ---------------- */
+            document.getElementById('btnAdmLogout').addEventListener('click', function () {
+                LoRixAuth.logout();
+            });
+
+            /* ---------------- boot ---------------- */
+            renderAll();
+            LoRixAuth.bindDpad(document);   // TV remote arrow/OK navigation
+        })();
+    </script>
+
+</body>
+</html>

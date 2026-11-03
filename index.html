@@ -1529,6 +1529,13 @@
 <body>
 
     <!-- ========================================================
+         LICENSE GATE: armed before any catalog markup so the
+         page is locked from the very first paint.
+    ======================================================== -->
+    <script src="auth.js"></script>
+    <script>LoRixAuth.mountGate();</script>
+
+    <!-- ========================================================
          VIEW 1: MAIN MEDIA CATALOG (SPA DASHBOARD)
     ======================================================== -->
     <div id="catalogView">
@@ -1555,6 +1562,8 @@
                     <span class="pulse-dot"></span>
                     <span>Family Engine Active</span>
                 </div>
+                <button class="nav-btn" id="btnAdmin" onclick="location.href='admin.html'" style="display:none;"><i class="fa-solid fa-gauge-high"></i> Admin</button>
+                <button class="nav-btn" id="btnLogout" onclick="LoRixAuth.logout()" style="display:none;"><i class="fa-solid fa-right-from-bracket"></i> Exit</button>
             </div>
         </nav>
 
@@ -1830,6 +1839,9 @@
         let searchQuery = '';
         let activeModalItem = null;
 
+        // Auth gate: the catalog only loads behind a valid, licensed login.
+        const AUTHED = typeof LoRixAuth !== 'undefined' && LoRixAuth.isAuthed();
+
         // Current Active TV Series Episode Session
         let activeTvSeries = null;
         let activeSeriesEpisodes = [];
@@ -1879,8 +1891,10 @@
             { id: "tt0944947", title: "Game of Thrones", type: "tv", year: 2011, rating: 9.2, genre: "Action / Drama", poster: "https://m.media-amazon.com/images/M/MV5MDExMDdhbDgtYTYwMS00N2VkLTgwOGYtMGFlN2FlODgzN2VkXkEyXkFqcGc@._V1_SX300.jpg", desc: "Nine noble families fight for control over Westeros." }
         ];
 
-        fullCatalog = [...initialSeed];
-        applyFilters();
+        if (AUTHED) {
+            fullCatalog = [...initialSeed];
+            applyFilters();
+        }
 
         function mergeCatalog(parts) {
             const seen = new Set();
@@ -1909,14 +1923,17 @@
         }
 
         // Movies from catalog.json (optional) + TV series from tv_dataset.json
-        Promise.all([
-            fetchJsonArray('catalog.json'),
-            fetchJsonArray('tv_dataset.json')
-        ]).then(([catalog, tvShows]) => {
-            fullCatalog = mergeCatalog([initialSeed, catalog, tvShows]);
-            console.log(`[LoRix SPA Engine] Loaded ${fullCatalog.length} media titles (${tvShows.length} TV series).`);
-            applyFilters();
-        });
+        // (skipped while the license gate is up — no fetches until a login).
+        if (AUTHED) {
+            Promise.all([
+                fetchJsonArray('catalog.json'),
+                fetchJsonArray('tv_dataset.json')
+            ]).then(([catalog, tvShows]) => {
+                fullCatalog = mergeCatalog([initialSeed, catalog, tvShows]);
+                console.log(`[LoRix SPA Engine] Loaded ${fullCatalog.length} media titles (${tvShows.length} TV series).`);
+                applyFilters();
+            });
+        }
 
         // Merge live TMDB titles into the browse catalog (dedupe by id and
         // by title+type so bundled and live versions never double up).
@@ -1938,7 +1955,7 @@
 
         // TMDB live rails: movies-first bootstrap (Hollywood, Anime, Korean,
         // Turkish, Arabic + era slices), then the deep 70k+ expansion loop.
-        if (typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady()) {
+        if (AUTHED && typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady()) {
             LoRixTMDB.bootstrapRails().then(items => {
                 const added = upsertCatalog(items);
                 if (added) {
@@ -1949,7 +1966,7 @@
                 console.log(`[LoRix TMDB] Deep movie expansion armed — pool ${st.pool}/${st.target} (movies ${st.movies} • TV ${st.tv}).`);
                 LoRixTMDB.startBackgroundExpansion({ onBatch: absorbRemoteBatch });
             }).catch(err => console.warn('[LoRix TMDB] Bootstrap failed:', err));
-        } else {
+        } else if (AUTHED) {
             console.log('[LoRix TMDB] No API key configured — running on bundled catalog (set TMDB_API_KEY in tmdb.js).');
         }
 
@@ -2563,6 +2580,11 @@
         }
 
         function launchCinemaPlayer(id, title, type, season = 1, episode = 1) {
+            // License gate: playback is refused without an active session.
+            if (typeof LoRixAuth !== 'undefined' && !LoRixAuth.isAuthed()) {
+                console.warn('[LoRix Auth] Playback blocked — no active session.');
+                return;
+            }
             console.log(`[LoRix SPA Player] Streaming: ${title} (${id}) [${(type || 'movie').toUpperCase()}] S${season}E${episode}`);
 
             currentPlayingMedia = { id, title, type: type || 'movie', season, episode };
