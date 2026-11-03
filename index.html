@@ -1548,7 +1548,7 @@
             </div>
             <div class="nav-right">
                 <div class="search-wrapper">
-                    <input type="text" id="searchInput" class="search-box" placeholder="Search 4,000+ titles, genre, year...">
+                    <input type="text" id="searchInput" class="search-box" placeholder="Search 90,000+ movies, anime, K-drama, Turkish, Arabic...">
                     <i class="fa-solid fa-magnifying-glass"></i>
                 </div>
                 <div class="family-pill">
@@ -1816,6 +1816,8 @@
     <!-- ========================================================
          CORE SPA & EPISODES APPLICATION LOGIC
     ======================================================== -->
+    <script src="tmdb.js"></script>
+    <script src="family-engine.js"></script>
     <script>
         // Global SPA State
         let fullCatalog = [];
@@ -1916,6 +1918,37 @@
             applyFilters();
         });
 
+        // Merge live TMDB titles into the browse catalog (dedupe by id and
+        // by title+type so bundled and live versions never double up).
+        function upsertCatalog(items) {
+            let added = 0;
+            const seenIds = new Set(fullCatalog.map(i => i.id));
+            const seenTitles = new Set(fullCatalog.map(i => `${i.type}:${String(i.title || '').toLowerCase()}`));
+            (items || []).forEach(item => {
+                if (!item || !item.id || seenIds.has(item.id)) return;
+                const tk = `${item.type}:${String(item.title || '').toLowerCase()}`;
+                if (seenTitles.has(tk)) return;
+                seenIds.add(item.id);
+                seenTitles.add(tk);
+                fullCatalog.push(item);
+                added++;
+            });
+            return added;
+        }
+
+        // TMDB live rails: Hollywood, Anime, K-Drama, Turkish, Arabic.
+        if (typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady()) {
+            LoRixTMDB.bootstrapRails().then(items => {
+                const added = upsertCatalog(items);
+                if (added) {
+                    console.log(`[LoRix TMDB] Live catalog synchronized: +${added} titles.`);
+                    applyFilters();
+                }
+            }).catch(err => console.warn('[LoRix TMDB] Bootstrap failed:', err));
+        } else {
+            console.log('[LoRix TMDB] No API key configured — running on bundled catalog (set TMDB_API_KEY in tmdb.js).');
+        }
+
         // Filter and Search Logic
         function applyFilters() {
             let filtered = fullCatalog;
@@ -1939,14 +1972,17 @@
                 filtered = filtered.filter(i => 
                     (i.title && i.title.toLowerCase().includes(q)) ||
                     (i.year && i.year.toString().includes(q)) ||
-                    (i.genre && i.genre.toLowerCase().includes(q))
+                    (i.genre && i.genre.toLowerCase().includes(q)) ||
+                    i.lastQuery === searchQuery
                 );
             }
 
             filteredCatalog = filtered;
             itemsRendered = 0;
             grid.innerHTML = '';
-            catalogCount.innerHTML = `Showing <b>${filteredCatalog.length.toLocaleString()}</b> available titles`;
+            const liveBadge = (typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady())
+                ? ' <span style="color: var(--emerald); font-weight: 800;">• TMDB LIVE</span>' : '';
+            catalogCount.innerHTML = `Showing <b>${filteredCatalog.length.toLocaleString()}</b> available titles${liveBadge}`;
 
             if (filteredCatalog.length === 0) {
                 grid.innerHTML = `
@@ -2034,9 +2070,30 @@
             applyFilters();
         }
 
+        // Debounced live search: local filter first (instant), then TMDB for
+        // anything beyond the bundled catalog — anime / K-drama / Turkish /
+        // Arabic / the full 90k+ library. Stale responses are discarded.
+        let searchSeq = 0;
+        let searchDebounce = null;
+
         searchInput.addEventListener('input', (e) => {
             searchQuery = e.target.value.trim();
             applyFilters();
+
+            if (searchDebounce) clearTimeout(searchDebounce);
+            if (searchQuery.length < 2 || typeof LoRixTMDB === 'undefined' || !LoRixTMDB.isReady()) return;
+
+            searchDebounce = setTimeout(async () => {
+                const seq = ++searchSeq;
+                try {
+                    const results = await LoRixTMDB.searchMulti(searchQuery);
+                    if (seq !== searchSeq) return; // stale response — a newer query is pending
+                    results.forEach(r => { r.lastQuery = searchQuery; });
+                    if (upsertCatalog(results)) applyFilters();
+                } catch (err) {
+                    console.warn('[LoRix TMDB] Live search failed:', err);
+                }
+            }, 350);
         });
 
         // ========================================================
@@ -2084,7 +2141,38 @@
             renderSeasonTabsAndEpisodes();
         }
 
+        // Season manifest (TMDB official show data) + per-season episode cache
+        let activeSeasonManifest = null;
+        let activeSeasonCounts = {};
+        let seasonEpisodeCache = {};
+
         async function fetchSeriesEpisodes(series) {
+            activeSeasonManifest = null;
+            activeSeasonCounts = {};
+            seasonEpisodeCache = {};
+
+            // 1) TMDB official season/episode data — global catalog coverage
+            //    (Korean, Turkish, Arabic, anime, Hollywood alike).
+            if (typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady() && LoRixTMDB.isTmdbId(series.id)) {
+                try {
+                    const show = await LoRixTMDB.getTvShow(series.id);
+                    const seasons = (show.seasons || [])
+                        .map(s => Number(s.season_number))
+                        .filter(n => n > 0);
+                    if (seasons.length) {
+                        activeSeasonManifest = seasons;
+                        (show.seasons || []).forEach(s => {
+                            activeSeasonCounts[Number(s.season_number)] = Number(s.episode_count) || 0;
+                        });
+                        const eps = await loadTmdbSeason(series.id, seasons[0]);
+                        if (eps.length) return eps;
+                    }
+                } catch (err) {
+                    console.warn('[LoRix TMDB] Season manifest missed, falling back:', err);
+                }
+            }
+
+            // 2) IMDb-keyed items: TVMaze official schedule lookups
             const normalize = (episodes) => (episodes || [])
                 .filter(ep => ep && Number(ep.number) > 0)
                 .map(ep => ({
@@ -2125,6 +2213,15 @@
             return generateSyntheticEpisodes(series);
         }
 
+        // Fetch + cache every episode of one TMDB season (lazy per-season).
+        function loadTmdbSeason(tmdbId, seasonNum) {
+            if (seasonEpisodeCache[seasonNum]) return Promise.resolve(seasonEpisodeCache[seasonNum]);
+            return LoRixTMDB.getTvSeason(tmdbId, seasonNum).then(eps => {
+                seasonEpisodeCache[seasonNum] = eps;
+                return eps;
+            });
+        }
+
         function generateSyntheticEpisodes(series) {
             const synthetic = [];
             for (let s = 1; s <= 4; s++) {
@@ -2143,6 +2240,7 @@
         }
 
         function getAvailableSeasons() {
+            if (activeSeasonManifest && activeSeasonManifest.length) return activeSeasonManifest;
             const seasons = [...new Set(activeSeriesEpisodes.map(e => e.season))]
                 .filter(s => Number(s) > 0)
                 .sort((a, b) => a - b);
@@ -2155,8 +2253,11 @@
                 currentSelectedSeason = seasons[0];
             }
 
+            const totalEps = (activeSeasonManifest && activeSeasonManifest.length)
+                ? Object.keys(activeSeasonCounts).reduce((sum, k) => sum + (activeSeasonCounts[k] || 0), 0)
+                : activeSeriesEpisodes.length;
             document.getElementById('episodesShowMeta').textContent =
-                `${seasons.length} Season${seasons.length > 1 ? 's' : ''} • ${activeSeriesEpisodes.length} Episodes Available`;
+                `${seasons.length} Season${seasons.length > 1 ? 's' : ''} • ${totalEps} Episodes Available`;
 
             seasonTabsContainer.innerHTML = seasons.map(s => `
                 <button class="season-tab-btn ${s === currentSelectedSeason ? 'active' : ''}"
@@ -2181,7 +2282,37 @@
         }
 
         function renderEpisodesForSeason(seasonNum) {
-            const seasonEpisodes = activeSeriesEpisodes.filter(e => e.season === seasonNum);
+            let seasonEpisodes = seasonEpisodeCache[seasonNum];
+
+            if (!seasonEpisodes) {
+                const fromFlat = activeSeriesEpisodes.filter(e => e.season === seasonNum);
+                if (fromFlat.length) {
+                    seasonEpisodeCache[seasonNum] = fromFlat;
+                    seasonEpisodes = fromFlat;
+                } else if (activeTvSeries && typeof LoRixTMDB !== 'undefined' &&
+                    LoRixTMDB.isReady() && LoRixTMDB.isTmdbId(activeTvSeries.id)) {
+                    // Lazy-load this season from TMDB (season tabs switch fast).
+                    episodesListBody.innerHTML = `<div style="padding: 40px; text-align: center; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 14px;"></div><span>Loading Season ${seasonNum} episodes...</span></div>`;
+                    const wantedShow = activeTvSeries.id;
+                    loadTmdbSeason(wantedShow, seasonNum)
+                        .then(eps => {
+                            if (currentSelectedSeason === seasonNum &&
+                                episodesModal.classList.contains('active') &&
+                                activeTvSeries && activeTvSeries.id === wantedShow) {
+                                renderEpisodesForSeason(seasonNum);
+                            }
+                        })
+                        .catch(() => {
+                            if (currentSelectedSeason === seasonNum) {
+                                episodesListBody.innerHTML = `<p style="padding: 30px; text-align: center; color: var(--text-muted);">No episodes found for Season ${seasonNum}.</p>`;
+                            }
+                        });
+                    return;
+                } else {
+                    episodesListBody.innerHTML = `<p style="padding: 30px; text-align: center; color: var(--text-muted);">No episodes found for Season ${seasonNum}.</p>`;
+                    return;
+                }
+            }
 
             if (seasonEpisodes.length === 0) {
                 episodesListBody.innerHTML = `<p style="padding: 30px; text-align: center; color: var(--text-muted);">No episodes found for Season ${seasonNum}.</p>`;
@@ -2434,7 +2565,11 @@
             playerView.style.display = 'flex';
             setTimeout(() => playerView.classList.add('active'), 10);
 
-            setupFamilyEngineForMedia(id);
+            // Family Engine keys on IMDb ids — resolve TMDB catalog ids lazily
+            const engineKey = (typeof LoRixTMDB !== 'undefined')
+                ? LoRixTMDB.resolveImdbId(id, type || 'movie').catch(() => null)
+                : Promise.resolve(null);
+            engineKey.then(imdbId => setupFamilyEngineForMedia(imdbId || id, season, episode));
         }
 
         function backToCatalog() {
@@ -2483,7 +2618,8 @@
             document.getElementById('modalTagType').textContent = (item.type || 'MOVIE').toUpperCase();
             document.getElementById('modalTagYear').textContent = item.year || 2024;
             document.getElementById('modalTagRating').innerHTML = `<i class="fa-solid fa-star"></i> ${item.rating || 7.5}`;
-            document.getElementById('modalImdb').textContent = item.id;
+            document.getElementById('modalImdb').textContent =
+                item.source === 'tmdb' ? `TMDB #${item.id}` : item.id;
             document.getElementById('modalGenre').textContent = item.genre || "Action / Drama";
             document.getElementById('modalBannerImg').src = item.poster;
 
@@ -2525,7 +2661,10 @@
         }
 
         // ========================================================
-        // TOGGLEABLE FAMILY ENGINE PROTECTION
+        // 2. FAMILY ENGINE — real currentTime censorship (LoRix)
+        // ========================================================
+        // Clock paths: same-origin embed probe (inner <video>.currentTime)
+        // | cross-origin embed bridge (lorix-embed -> lorix-family).
         // ========================================================
         const familySwitch = document.getElementById('familyEngineSwitch');
         const familyContainer = document.getElementById('familyToggleContainer');
@@ -2536,147 +2675,169 @@
         const hudMsg = document.getElementById('hudMsg');
         const curtainTimer = document.getElementById('curtainTimer');
 
-        let isFamilyEngineEnabled = true;
-        let playbackSecond = 0;
-        let clockTimer = null;
-        let activeFilterRules = [];
-
-        const filterTimestampDatabase = {
-            "tt0499549": [ // Avatar 2009
-                { start: 12, end: 20, action: "censor", label: "Alien Battle Violence Shielded" },
-                { start: 45, end: 55, action: "mute", label: "Combat Audio Muted" }
-            ],
-            "tt15239678": [ // Dune 2
-                { start: 10, end: 20, action: "censor", label: "Brutal Conflict Shielded" },
-                { start: 40, end: 50, action: "mute", label: "Profanity Muted" }
-            ],
-            "tt6263850": [ // Deadpool & Wolverine
-                { start: 8, end: 18, action: "mute", label: "Vulgar Profanity Muted" },
-                { start: 30, end: 42, action: "censor", label: "Explicit Violence Hidden" }
-            ],
-            "tt1190634": [ // The Boys
-                { start: 10, end: 22, action: "censor", label: "Adult Graphic Scene Obscured" },
-                { start: 35, end: 48, action: "mute", label: "Sensitive Sound Muted" }
-            ],
-            "default": [
-                { start: 15, end: 25, action: "censor", label: "Sensitive Scene Auto-Shielded" },
-                { start: 50, end: 60, action: "mute", label: "Language Timestamp Auto-Muted" }
-            ]
+        const CATEGORY_LABEL = {
+            nudity: 'Nudity / Explicit Scene',
+            gore: 'Extreme Gore / Violence',
+            profanity: 'Profanity / Slurs'
         };
 
-        function setupFamilyEngineForMedia(mediaId) {
-            activeFilterRules = filterTimestampDatabase[mediaId] || filterTimestampDatabase["default"];
-            if (isFamilyEngineEnabled) {
-                startEngineClock();
-            }
+        const MODE_LABEL = {
+            'native': 'currentTime',
+            'embed-native': 'embed currentTime',
+            'embed-bridge': 'embed bridge feed',
+            'embed-idle': 'awaiting embed time feed'
+        };
+
+        // Timer state declared before boot — setMedia emits synchronously.
+        let countdownTimer = null;
+        let curtainFlash = null;
+        let toastTimeout = null;
+
+        // ---------- engine boot (binds the cloud embed iframe) ----------
+        const familyEngine = new LoRixFamily.FamilyEngine(iframe, {
+            onState: renderFamilyState
+        });
+
+        // Persisted toggle, default ON
+        let storedFamily = null;
+        try { storedFamily = localStorage.getItem('lorix.family'); } catch (e) {}
+        if (storedFamily === 'off') {
+            familySwitch.checked = false;
+        } else {
+            familyEngine.enable();
+        }
+
+        // Called by launchCinemaPlayer(id, title, type, season, episode)
+        function setupFamilyEngineForMedia(id, season, episode) {
+            familyEngine.setMedia({ id: id, season: season, episode: episode });
+        }
+
+        // Called by backToCatalog() — drop ranges, reset the HUD
+        function stopEngineClock() {
+            familyEngine.setMedia(null);
+            stopCountdown();
+            hideCurtain();
+            hudDot.className = 'hud-indicator';
         }
 
         familySwitch.addEventListener('change', (e) => {
-            isFamilyEngineEnabled = e.target.checked;
-
-            if (isFamilyEngineEnabled) {
-                familyContainer.classList.remove('disabled');
-                familyStateText.textContent = "ENABLED";
-                familyStateText.style.color = "var(--emerald)";
-                hudDot.className = "hud-indicator";
-                hudDot.style.background = "var(--emerald)";
-                hudDot.style.boxShadow = "0 0 10px var(--emerald)";
-                hudMsg.textContent = "Family Engine: Safe Monitoring Active";
-                
-                showToast("Family Engine Enabled", "Timestamp dataset active. Sensitive scenes & profanity will be auto-muted/shielded.");
-                startEngineClock();
+            if (e.target.checked) {
+                familyEngine.enable();
+                showToast('Family Engine Enabled',
+                    'Dataset armed — nudity, gore and profanity ranges are enforced.');
             } else {
-                familyContainer.classList.add('disabled');
-                familyStateText.textContent = "DISABLED";
-                familyStateText.style.color = "var(--text-muted)";
-                hudDot.className = "hud-indicator";
-                hudDot.style.background = "#64748b";
-                hudDot.style.boxShadow = "none";
-                hudMsg.textContent = "Family Engine: Inactive (Raw Playback)";
-                
-                hideCurtain();
-                stopEngineClock();
-                showToast("Family Engine Disabled", "Unfiltered playback active. All scenes and audio will play normally.");
+                familyEngine.disable();
+                showToast('Family Engine Disabled',
+                    'Raw playback — no muting, no skipping.');
             }
+            try { localStorage.setItem('lorix.family', e.target.checked ? 'on' : 'off'); }
+            catch (err) {}
         });
 
-        function startEngineClock() {
-            if (clockTimer) clearInterval(clockTimer);
-            playbackSecond = 0;
+        // ---------- engine state -> player UI ----------
 
-            clockTimer = setInterval(() => {
-                if (!isFamilyEngineEnabled) return;
-                playbackSecond++;
+        function renderFamilyState(s) {
+            familyContainer.classList.toggle('disabled', !s.enabled);
+            familyStateText.textContent = s.enabled ? 'ENABLED' : 'DISABLED';
+            familyStateText.style.color = s.enabled ? 'var(--emerald)' : 'var(--text-muted)';
 
-                let currentRule = null;
-                for (let rule of activeFilterRules) {
-                    if (playbackSecond >= rule.start && playbackSecond <= rule.end) {
-                        currentRule = rule;
-                        break;
-                    }
-                }
-
-                if (currentRule) {
-                    triggerFilterEffect(currentRule);
+            if (s.type === 'engage' && s.detail) {
+                const label = CATEGORY_LABEL[s.detail.category] || s.detail.category.toUpperCase();
+                hudDot.className = 'hud-indicator filtering';
+                if (s.detail.policy === 'mute') {
+                    const via = s.detail.source === 'subtitle' ? ' (subtitle scan)' : '';
+                    hudMsg.textContent = `Muting ${label}${via}…`;
+                    showToast('Audio Muted', `${label} — sound filtered for family viewing.`);
                 } else {
-                    restoreNormalPlayback();
+                    hudMsg.textContent = `Skipping ${label}…`;
+                    showToast('Scene Skipped', `${label} — jumped past flagged timestamps.`);
+                    showCurtainFlash(label);
                 }
-            }, 1000);
-        }
+                startCountdown();
+                return;
+            }
 
-        function stopEngineClock() {
-            if (clockTimer) clearInterval(clockTimer);
-            restoreNormalPlayback();
-        }
+            if (s.type === 'clear') {
+                stopCountdown();
+                hudDot.className = 'hud-indicator';
+                renderMonitorHud();
+                return;
+            }
 
-        let isFilterActive = false;
-
-        function triggerFilterEffect(rule) {
-            hudDot.className = "hud-indicator filtering";
-            hudMsg.textContent = `Protection Active: ${rule.label} (${rule.end - playbackSecond}s)`;
-
-            if (!isFilterActive) {
-                isFilterActive = true;
-                if (rule.action === 'censor') {
-                    showCurtain(rule.label, rule.end - playbackSecond);
-                    showToast("Scene Shield Triggered", `${rule.label} - Safeguarding family viewing.`);
-                } else if (rule.action === 'mute') {
-                    showToast("Audio Muted", `${rule.label} - Sound filtered out for safe viewing.`);
-                }
+            // toggle / media
+            stopCountdown();
+            if (s.type === 'media') hideCurtain();
+            if (!s.enabled) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Family Engine: Inactive (Raw Stream)';
+            } else if (s.type === 'media' && s.hasId && !s.key) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Auto-monitoring subtitles & standard engine active';
+                showToast('Auto-Monitor Active', 'No timestamp dataset — subtitle lexicon scanning live.');
             } else {
-                curtainTimer.textContent = `Resuming clean playback in ${rule.end - playbackSecond}s...`;
+                renderMonitorHud();
+                if (s.type === 'media' && s.key) {
+                    showToast('Censorship Dataset Armed',
+                        `${s.key} — ${s.state.ranges} flagged ranges loaded.`);
+                }
             }
         }
 
-        function restoreNormalPlayback() {
-            if (isFilterActive) {
-                isFilterActive = false;
-                hudDot.className = "hud-indicator";
-                hudMsg.textContent = "Family Engine: Safe Monitoring Active";
-                hideCurtain();
-                showToast("Standard Playback Resumed", "Clean content stream safely restored.");
+        function renderMonitorHud() {
+            const st = familyEngine.getState();
+            if (!st.enabled) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Family Engine: Inactive (Raw Stream)';
+                return;
             }
+            if (!st.key) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Auto-monitoring subtitles & standard engine active';
+                return;
+            }
+            const mode = MODE_LABEL[st.mode] || st.mode;
+            hudDot.className = st.mode === 'embed-idle' ? 'hud-indicator filtering' : 'hud-indicator';
+            hudMsg.textContent = `Family Engine: Monitoring ${mode} • ${st.ranges} ranges`;
         }
 
-        function showCurtain(reason, secondsLeft) {
+        // Live countdown while a censored range is on screen.
+        function startCountdown() {
+            stopCountdown();
+            countdownTimer = setInterval(() => {
+                const st = familyEngine.getState();
+                if (!st.active) { stopCountdown(); return; }
+                const label = CATEGORY_LABEL[st.active.category] || '';
+                const via = st.active.source === 'subtitle' ? ' (subtitle)' : '';
+                hudMsg.textContent = st.active.category === 'profanity'
+                    ? `Muting ${label}${via} — ${st.active.remaining}s left`
+                    : `Skipping ${label} — ${st.active.remaining}s left`;
+            }, 500);
+        }
+
+        function stopCountdown() {
+            if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+        }
+
+        // Skip lands behind a short shield flash so the jump cut never shows.
+        function showCurtainFlash(label) {
             familyCurtain.style.display = 'flex';
-            curtainTimer.textContent = `Resuming clean playback in ${secondsLeft}s...`;
+            curtainTimer.textContent = `${label} shielded — resuming clean playback…`;
+            if (curtainFlash) clearTimeout(curtainFlash);
+            curtainFlash = setTimeout(hideCurtain, 1100);
         }
 
         function hideCurtain() {
+            if (curtainFlash) { clearTimeout(curtainFlash); curtainFlash = null; }
             familyCurtain.style.display = 'none';
         }
 
-        let toastTimeout = null;
         function showToast(title, detail) {
             document.getElementById('toastTitle').textContent = title;
             document.getElementById('toastDetail').textContent = detail;
             familyToast.classList.add('show');
 
             if (toastTimeout) clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => {
-                familyToast.classList.remove('show');
-            }, 3500);
+            toastTimeout = setTimeout(() => familyToast.classList.remove('show'), 3500);
         }
     </script>
 </body>

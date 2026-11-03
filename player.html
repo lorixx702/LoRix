@@ -253,6 +253,11 @@
             z-index: 1;
         }
 
+        video.stream-iframe {
+            object-fit: contain;
+            background: #000000;
+        }
+
         /* Family Engine HUD */
         .family-engine-hud {
             position: absolute;
@@ -620,6 +625,8 @@
     </div>
 
     <!-- Core Dynamic Player & Family Engine Logic -->
+    <script src="tmdb.js"></script>
+    <script src="family-engine.js"></script>
     <script>
         // ========================================================
         // 1. DYNAMIC PLAYER ID & MEDIA TYPE ROUTING (EXACT TITLE)
@@ -650,19 +657,23 @@
         // MultiEmbed is set as primary default: proven 100% accurate stream matching for movies and TV shows
         let currentServer = 'multiembed';
 
+        // Season/episode come from ?s= &e= (episode picker hands them over)
+        const tvSeason = urlParams.get('s') || '1';
+        const tvEpisode = urlParams.get('e') || '1';
+
         // URL builder for both Movies and TV Shows supporting season/episode navigator
         function buildStreamUrl(server, id, type) {
             const isTv = (type === 'tv');
 
             if (server === 'multiembed') {
                 if (isTv) {
-                    return `https://multiembed.mov/?video_id=${id}&s=1&e=1`;
+                    return `https://multiembed.mov/?video_id=${id}&s=${tvSeason}&e=${tvEpisode}`;
                 } else {
                     return `https://multiembed.mov/?video_id=${id}`;
                 }
             } else if (server === 'vidsrc') {
                 if (isTv) {
-                    return `https://vidsrc.to/embed/tv/${id}/1/1`;
+                    return `https://vidsrc.to/embed/tv/${id}/${tvSeason}/${tvEpisode}`;
                 } else {
                     return `https://vidsrc.to/embed/movie/${id}`;
                 }
@@ -676,19 +687,44 @@
             return `https://multiembed.mov/?video_id=${id}`;
         }
 
-        // Mount dynamic stream source instantly
-        const targetUrl = buildStreamUrl(currentServer, mediaId, mediaType);
-        iframe.src = targetUrl;
-        console.log(`[LoRix Player Engine] Streaming ${mediaTitle} (${mediaId}) via ${currentServer}: ${targetUrl}`);
+        // Mount dynamic stream source instantly.
+        // ?src=<direct mp4/m3u8> runs native playback — the Family Engine's
+        // real currentTime path (demo: ?src=<sample.mp4>&id=tt0000001).
+        const directSrc = urlParams.get('src');
+        let nativePlayer = null;
 
-        iframe.onload = () => {
-            setTimeout(() => {
+        if (directSrc) {
+            iframe.style.display = 'none';
+            nativePlayer = document.createElement('video');
+            nativePlayer.id = 'nativePlayer';
+            nativePlayer.className = 'stream-iframe';
+            nativePlayer.controls = true;
+            nativePlayer.playsInline = true;
+            nativePlayer.setAttribute('playsinline', '');
+            nativePlayer.src = directSrc;
+            document.getElementById('streamingStage').appendChild(nativePlayer);
+
+            nativePlayer.addEventListener('canplay', () => {
                 loader.style.opacity = '0';
                 setTimeout(() => loader.style.display = 'none', 400);
-            }, 600);
-        };
+            });
+
+            document.getElementById('currentProviderLabel').textContent = 'Native Direct-Play Engine';
+        } else {
+            const targetUrl = buildStreamUrl(currentServer, mediaId, mediaType);
+            iframe.src = targetUrl;
+            console.log(`[LoRix Player Engine] Streaming ${mediaTitle} (${mediaId}) via ${currentServer}: ${targetUrl}`);
+
+            iframe.onload = () => {
+                setTimeout(() => {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.style.display = 'none', 400);
+                }, 600);
+            };
+        }
 
         function switchServer(serverName, btn) {
+            if (directSrc) return; // native direct-play: no cloud servers
             currentServer = serverName;
             document.querySelectorAll('.server-btn').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
@@ -702,7 +738,10 @@
         }
 
         // ========================================================
-        // 2. TOGGLEABLE FAMILY ENGINE PROTECTION (ON/OFF CONTROL)
+        // 2. FAMILY ENGINE — real currentTime censorship (LoRix)
+        // ========================================================
+        // Clock paths: native <video> (?src=) | same-origin embed probe
+        // | cross-origin embed bridge (lorix-embed -> lorix-family).
         // ========================================================
         const familySwitch = document.getElementById('familyEngineSwitch');
         const familyContainer = document.getElementById('familyToggleContainer');
@@ -713,151 +752,169 @@
         const hudMsg = document.getElementById('hudMsg');
         const curtainTimer = document.getElementById('curtainTimer');
 
-        let isFamilyEngineEnabled = true;
-        let playbackSecond = 0;
-        let clockTimer = null;
-
-        // Dynamic timestamp dataset for movies & TV series
-        const filterTimestampDatabase = {
-            "tt0499549": [ // Avatar 2009
-                { start: 15, end: 25, action: "censor", label: "Alien Battle Violence Shielded" },
-                { start: 55, end: 65, action: "mute", label: "Combat Profanity Muted" }
-            ],
-            "tt15239678": [ // Dune 2
-                { start: 12, end: 20, action: "censor", label: "Brutal Violence Shielded" },
-                { start: 50, end: 60, action: "mute", label: "Intense Distress Audio Muted" }
-            ],
-            "tt6263850": [ // Deadpool & Wolverine
-                { start: 8, end: 18, action: "mute", label: "Vulgar Profanity Muted" },
-                { start: 35, end: 48, action: "censor", label: "Explicit Gore Filtered" }
-            ],
-            "tt1190634": [ // The Boys
-                { start: 10, end: 22, action: "censor", label: "Adult Graphic Scene Obscured" },
-                { start: 40, end: 55, action: "skip", label: "Violent Incident Skipped" }
-            ],
-            "tt0816692": [ // Interstellar
-                { start: 15, end: 22, action: "mute", label: "Language Muted" },
-                { start: 60, end: 72, action: "censor", label: "Distress Scene Filtered" }
-            ],
-            "default": [
-                { start: 20, end: 30, action: "censor", label: "Sensitive Scene Auto-Shielded" },
-                { start: 65, end: 75, action: "mute", label: "Language Timestamp Auto-Muted" }
-            ]
+        const CATEGORY_LABEL = {
+            nudity: 'Nudity / Explicit Scene',
+            gore: 'Extreme Gore / Violence',
+            profanity: 'Profanity / Slurs'
         };
 
-        const activeFilterRules = filterTimestampDatabase[mediaId] || filterTimestampDatabase["default"];
+        const MODE_LABEL = {
+            'native': 'currentTime',
+            'embed-native': 'embed currentTime',
+            'embed-bridge': 'embed bridge feed',
+            'embed-idle': 'awaiting embed time feed'
+        };
 
-        // Toggle Event: User has full control to turn Family Engine ON or OFF
+        // Timer state declared before boot — setMedia emits synchronously.
+        let countdownTimer = null;
+        let curtainFlash = null;
+        let toastTimeout = null;
+
+        // ---------- engine boot ----------
+        // ?src=<direct mp4/m3u8> binds the native <video>; otherwise the
+        // cloud embed iframe (same-origin probe, then postMessage bridge).
+        const engineMedia = nativePlayer || iframe;
+        const familyEngine = new LoRixFamily.FamilyEngine(engineMedia, {
+            onState: renderFamilyState
+        });
+        // Engine keys on IMDb ids — resolve TMDB catalog ids before arming.
+        const engineKey = (typeof LoRixTMDB !== 'undefined')
+            ? LoRixTMDB.resolveImdbId(mediaId, mediaType).catch(() => null)
+            : Promise.resolve(null);
+        engineKey.then(imdbId => familyEngine.setMedia({
+            id: imdbId || mediaId,
+            season: urlParams.get('s'),
+            episode: urlParams.get('e')
+        }));
+
+        // Persisted toggle, default ON
+        let storedFamily = null;
+        try { storedFamily = localStorage.getItem('lorix.family'); } catch (e) {}
+        if (storedFamily === 'off') {
+            familySwitch.checked = false;
+        } else {
+            familyEngine.enable();
+        }
+
         familySwitch.addEventListener('change', (e) => {
-            isFamilyEngineEnabled = e.target.checked;
-
-            if (isFamilyEngineEnabled) {
-                familyContainer.classList.remove('disabled');
-                familyStateText.textContent = "ENABLED";
-                familyStateText.style.color = "var(--emerald)";
-                hudDot.className = "hud-indicator";
-                hudDot.style.background = "var(--emerald)";
-                hudDot.style.boxShadow = "0 0 10px var(--emerald)";
-                hudMsg.textContent = "Family Engine: Safe Monitoring Active";
-                
-                showToast("Family Engine Enabled", "Timestamp dataset active. Sensitive scenes & profanity will be auto-muted/shielded.");
-                startEngineClock();
+            if (e.target.checked) {
+                familyEngine.enable();
+                showToast('Family Engine Enabled',
+                    'Dataset armed — nudity, gore and profanity ranges are enforced.');
             } else {
-                familyContainer.classList.add('disabled');
-                familyStateText.textContent = "DISABLED";
-                familyStateText.style.color = "var(--text-muted)";
-                hudDot.className = "hud-indicator";
-                hudDot.style.background = "#64748b";
-                hudDot.style.boxShadow = "none";
-                hudMsg.textContent = "Family Engine: Inactive (Raw Stream)";
-                
-                hideCurtain();
-                stopEngineClock();
-                showToast("Family Engine Disabled", "Unfiltered playback active. All scenes and audio will play normally.");
+                familyEngine.disable();
+                showToast('Family Engine Disabled',
+                    'Raw playback — no muting, no skipping.');
             }
+            try { localStorage.setItem('lorix.family', e.target.checked ? 'on' : 'off'); }
+            catch (err) {}
         });
 
-        function startEngineClock() {
-            if (clockTimer) clearInterval(clockTimer);
-            playbackSecond = 0;
+        // ---------- engine state -> player UI ----------
 
-            clockTimer = setInterval(() => {
-                if (!isFamilyEngineEnabled) return;
-                playbackSecond++;
+        function renderFamilyState(s) {
+            familyContainer.classList.toggle('disabled', !s.enabled);
+            familyStateText.textContent = s.enabled ? 'ENABLED' : 'DISABLED';
+            familyStateText.style.color = s.enabled ? 'var(--emerald)' : 'var(--text-muted)';
 
-                let currentRule = null;
-                for (let rule of activeFilterRules) {
-                    if (playbackSecond >= rule.start && playbackSecond <= rule.end) {
-                        currentRule = rule;
-                        break;
-                    }
-                }
-
-                if (currentRule) {
-                    triggerFilterEffect(currentRule);
+            if (s.type === 'engage' && s.detail) {
+                const label = CATEGORY_LABEL[s.detail.category] || s.detail.category.toUpperCase();
+                hudDot.className = 'hud-indicator filtering';
+                if (s.detail.policy === 'mute') {
+                    const via = s.detail.source === 'subtitle' ? ' (subtitle scan)' : '';
+                    hudMsg.textContent = `Muting ${label}${via}…`;
+                    showToast('Audio Muted', `${label} — sound filtered for family viewing.`);
                 } else {
-                    restoreNormalPlayback();
+                    hudMsg.textContent = `Skipping ${label}…`;
+                    showToast('Scene Skipped', `${label} — jumped past flagged timestamps.`);
+                    showCurtainFlash(label);
                 }
-            }, 1000);
-        }
+                startCountdown();
+                return;
+            }
 
-        function stopEngineClock() {
-            if (clockTimer) clearInterval(clockTimer);
-            restoreNormalPlayback();
-        }
+            if (s.type === 'clear') {
+                stopCountdown();
+                hudDot.className = 'hud-indicator';
+                renderMonitorHud();
+                return;
+            }
 
-        let isFilterActive = false;
-
-        function triggerFilterEffect(rule) {
-            hudDot.className = "hud-indicator filtering";
-            hudMsg.textContent = `Protection Active: ${rule.label} (${rule.end - playbackSecond}s)`;
-
-            if (!isFilterActive) {
-                isFilterActive = true;
-                if (rule.action === 'censor') {
-                    showCurtain(rule.label, rule.end - playbackSecond);
-                    showToast("Scene Shield Triggered", `${rule.label} - Safeguarding family viewing.`);
-                } else if (rule.action === 'mute') {
-                    showToast("Audio Muted", `${rule.label} - Sound filtered out for safe viewing.`);
-                }
+            // toggle / media
+            stopCountdown();
+            if (s.type === 'media') hideCurtain();
+            if (!s.enabled) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Family Engine: Inactive (Raw Stream)';
+            } else if (s.type === 'media' && s.hasId && !s.key) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Auto-monitoring subtitles & standard engine active';
+                showToast('Auto-Monitor Active', 'No timestamp dataset — subtitle lexicon scanning live.');
             } else {
-                curtainTimer.textContent = `Resuming clean playback in ${rule.end - playbackSecond}s...`;
+                renderMonitorHud();
+                if (s.type === 'media' && s.key) {
+                    showToast('Censorship Dataset Armed',
+                        `${s.key} — ${s.state.ranges} flagged ranges loaded.`);
+                }
             }
         }
 
-        function restoreNormalPlayback() {
-            if (isFilterActive) {
-                isFilterActive = false;
-                hudDot.className = "hud-indicator";
-                hudMsg.textContent = "Family Engine: Safe Monitoring Active";
-                hideCurtain();
-                showToast("Standard Playback Resumed", "Clean content stream safely restored.");
+        function renderMonitorHud() {
+            const st = familyEngine.getState();
+            if (!st.enabled) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Family Engine: Inactive (Raw Stream)';
+                return;
             }
+            if (!st.key) {
+                hudDot.className = 'hud-indicator';
+                hudMsg.textContent = 'Auto-monitoring subtitles & standard engine active';
+                return;
+            }
+            const mode = MODE_LABEL[st.mode] || st.mode;
+            hudDot.className = st.mode === 'embed-idle' ? 'hud-indicator filtering' : 'hud-indicator';
+            hudMsg.textContent = `Family Engine: Monitoring ${mode} • ${st.ranges} ranges`;
         }
 
-        function showCurtain(reason, secondsLeft) {
+        // Live countdown while a censored range is on screen.
+        function startCountdown() {
+            stopCountdown();
+            countdownTimer = setInterval(() => {
+                const st = familyEngine.getState();
+                if (!st.active) { stopCountdown(); return; }
+                const label = CATEGORY_LABEL[st.active.category] || '';
+                const via = st.active.source === 'subtitle' ? ' (subtitle)' : '';
+                hudMsg.textContent = st.active.category === 'profanity'
+                    ? `Muting ${label}${via} — ${st.active.remaining}s left`
+                    : `Skipping ${label} — ${st.active.remaining}s left`;
+            }, 500);
+        }
+
+        function stopCountdown() {
+            if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+        }
+
+        // Skip lands behind a short shield flash so the jump cut never shows.
+        function showCurtainFlash(label) {
             familyCurtain.style.display = 'flex';
-            curtainTimer.textContent = `Resuming clean playback in ${secondsLeft}s...`;
+            curtainTimer.textContent = `${label} shielded — resuming clean playback…`;
+            if (curtainFlash) clearTimeout(curtainFlash);
+            curtainFlash = setTimeout(hideCurtain, 1100);
         }
 
         function hideCurtain() {
+            if (curtainFlash) { clearTimeout(curtainFlash); curtainFlash = null; }
             familyCurtain.style.display = 'none';
         }
 
-        let toastTimeout = null;
         function showToast(title, detail) {
             document.getElementById('toastTitle').textContent = title;
             document.getElementById('toastDetail').textContent = detail;
             familyToast.classList.add('show');
 
             if (toastTimeout) clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => {
-                familyToast.classList.remove('show');
-            }, 4000);
+            toastTimeout = setTimeout(() => familyToast.classList.remove('show'), 3500);
         }
-
-        // Initialize clock with Family Engine ON by default
-        startEngineClock();
     </script>
 </body>
 </html>
