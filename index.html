@@ -1936,7 +1936,8 @@
             return added;
         }
 
-        // TMDB live rails: Hollywood, Anime, K-Drama, Turkish, Arabic.
+        // TMDB live rails: movies-first bootstrap (Hollywood, Anime, Korean,
+        // Turkish, Arabic + era slices), then the deep 70k+ expansion loop.
         if (typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady()) {
             LoRixTMDB.bootstrapRails().then(items => {
                 const added = upsertCatalog(items);
@@ -1944,45 +1945,51 @@
                     console.log(`[LoRix TMDB] Live catalog synchronized: +${added} titles.`);
                     applyFilters();
                 }
+                const st = LoRixTMDB.poolStats();
+                console.log(`[LoRix TMDB] Deep movie expansion armed — pool ${st.pool}/${st.target} (movies ${st.movies} • TV ${st.tv}).`);
+                LoRixTMDB.startBackgroundExpansion({ onBatch: absorbRemoteBatch });
             }).catch(err => console.warn('[LoRix TMDB] Bootstrap failed:', err));
         } else {
             console.log('[LoRix TMDB] No API key configured — running on bundled catalog (set TMDB_API_KEY in tmdb.js).');
         }
 
-        // Filter and Search Logic
-        function applyFilters() {
-            let filtered = fullCatalog;
-
-            if (currentCategory !== 'all') {
-                filtered = filtered.filter(i => i.type === currentCategory);
-            }
+        // Filter and Search Logic — one predicate shared by full resets and
+        // by background expansion batches (which must never reset the grid).
+        function matchesActiveFilters(i) {
+            if (currentCategory !== 'all' && i.type !== currentCategory) return false;
 
             if (currentEra === '2024-2026') {
-                filtered = filtered.filter(i => i.year >= 2024);
+                if (!(i.year >= 2024)) return false;
             } else if (currentEra === '2020-2023') {
-                filtered = filtered.filter(i => i.year >= 2020 && i.year <= 2023);
+                if (!(i.year >= 2020 && i.year <= 2023)) return false;
             } else if (currentEra === '2010-2019') {
-                filtered = filtered.filter(i => i.year >= 2010 && i.year <= 2019);
+                if (!(i.year >= 2010 && i.year <= 2019)) return false;
             } else if (currentEra === '2000-2009') {
-                filtered = filtered.filter(i => i.year >= 2000 && i.year <= 2009);
+                if (!(i.year >= 2000 && i.year <= 2009)) return false;
             }
 
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
-                filtered = filtered.filter(i => 
-                    (i.title && i.title.toLowerCase().includes(q)) ||
+                const hit = (i.title && i.title.toLowerCase().includes(q)) ||
                     (i.year && i.year.toString().includes(q)) ||
                     (i.genre && i.genre.toLowerCase().includes(q)) ||
-                    i.lastQuery === searchQuery
-                );
+                    i.lastQuery === searchQuery;
+                if (!hit) return false;
             }
+            return true;
+        }
 
-            filteredCatalog = filtered;
-            itemsRendered = 0;
-            grid.innerHTML = '';
+        function updateCountLine() {
             const liveBadge = (typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady())
                 ? ' <span style="color: var(--emerald); font-weight: 800;">• TMDB LIVE</span>' : '';
             catalogCount.innerHTML = `Showing <b>${filteredCatalog.length.toLocaleString()}</b> available titles${liveBadge}`;
+        }
+
+        function applyFilters() {
+            filteredCatalog = fullCatalog.filter(matchesActiveFilters);
+            itemsRendered = 0;
+            grid.innerHTML = '';
+            updateCountLine();
 
             if (filteredCatalog.length === 0) {
                 grid.innerHTML = `
@@ -1996,6 +2003,27 @@
             }
 
             renderNextBatch();
+        }
+
+        // Absorb a background expansion/search batch WITHOUT resetting the
+        // grid or jumping the scroll position — cards append in place.
+        function absorbRemoteBatch(items) {
+            if (!items || !items.length) return 0;
+            const before = fullCatalog.length;
+            const added = upsertCatalog(items);
+            if (!added) return 0;
+            if (filteredCatalog.length === 0) { applyFilters(); return added; }
+
+            let appended = 0;
+            for (let idx = before; idx < fullCatalog.length; idx++) {
+                const it = fullCatalog[idx];
+                if (matchesActiveFilters(it)) { filteredCatalog.push(it); appended++; }
+            }
+            if (appended) {
+                renderNextBatch();
+                updateCountLine();
+            }
+            return appended;
         }
 
         function renderNextBatch() {
@@ -2044,6 +2072,11 @@
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 600) {
                 if (itemsRendered < filteredCatalog.length) {
                     renderNextBatch();
+                } else if (typeof LoRixTMDB !== 'undefined' && LoRixTMDB.isReady() &&
+                    !LoRixTMDB.poolStats().done) {
+                    // Current view is drained but the deep pool isn't full yet:
+                    // pull the next discovery round immediately.
+                    LoRixTMDB.expandMovies().then(absorbRemoteBatch).catch(() => {});
                 }
             }
         });
